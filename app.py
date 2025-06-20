@@ -16,7 +16,7 @@ def check_authentication():
     Checks if a user is logged in via Streamlit Cloud's Google Auth
     and if their email domain is authorized.
     """
-    user = st.experimental_user # Get user object from Streamlit Cloud environment
+    user = st.user # Get user object from Streamlit Cloud environment
 
     if user:
         user_email = user.email
