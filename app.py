@@ -59,13 +59,23 @@ if st.session_state.authenticated:
     if st.button("Logout"):
         logout()
 else:
-    st.error("Access Denied")
+    # --- Login Page Section ---
+    st.header("Login Page")
+    st.markdown("Please log in to access the application.")
+
     if st.session_state.user_email:
+        # User is logged into Google, but domain is not authorized
+        st.error("Access Denied")
         st.warning(f"Your email ({st.session_state.user_email}) is not authorized. Please log in with an email ending in @{ALLOWED_DOMAIN}.")
     else:
-        st.info("Please log in using Google authentication provided by Streamlit to access this application.")
+        # User is not logged into Google at all (or session expired)
+        st.info("To proceed, please use the Google authentication prompt provided by Streamlit.")
+        st.markdown(
+            "**(On Streamlit Community Cloud, a 'Continue with Google' button "
+            "should appear automatically above or below, or you may need to "
+            "refresh the page. This application requires a Google account "
+            "from the authorized domain.)**"
+        )
     
-    # Provide a placeholder for the login mechanism if it's not automatically shown by Streamlit Cloud.
-    # Streamlit Cloud generally injects a "Continue with Google" button if `st.experimental_user` is accessed and no user is logged in.
     st.markdown("---")
-    st.markdown("**(On Streamlit Community Cloud, a 'Continue with Google' button should appear automatically if you are not logged in. If not, try refreshing the page or checking your app's general Streamlit Cloud settings for login requirements.)**")
+    st.markdown("If you believe this is an error, please contact support.")
