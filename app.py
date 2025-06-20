@@ -1,107 +1,71 @@
-import os
-import subprocess
-import base64
-from flask import Flask, request, jsonify, send_file
-from pdf2image import convert_from_bytes
-from PIL import Image
-import io
+import streamlit as st
 
-app = Flask(__name__)
+# --- Streamlit App Configuration ---
+st.set_page_config(
+    page_title="Google Login & Domain Check",
+    layout="centered",
+    initial_sidebar_state="collapsed"
+)
 
-# Directory to store temporary files (will be cleaned up by OS or container restart)
-TEMP_DIR = "/tmp/latex_compiler"
-os.makedirs(TEMP_DIR, exist_ok=True)
+# --- Configuration for allowed domain ---
+ALLOWED_DOMAIN = "ghs.edu.hk" # The specific domain you want to allow
 
-@app.route('/compile-latex', methods=['POST'])
-def compile_latex():
-    latex_code = request.json.get('latex_code')
-    if not latex_code:
-        return jsonify({"error": "No LaTeX code provided"}), 400
+# --- Function to check authentication and domain ---
+def check_authentication():
+    """
+    Checks if a user is logged in via Streamlit Cloud's Google Auth
+    and if their email domain is authorized.
+    """
+    user = st.experimental_user # Get user object from Streamlit Cloud environment
 
-    unique_id = os.urandom(8).hex() # Generate a unique ID for temporary files
-    tex_filepath = os.path.join(TEMP_DIR, f"{unique_id}.tex")
-    pdf_filepath = os.path.join(TEMP_DIR, f"{unique_id}.pdf")
-    png_filepath = os.path.join(TEMP_DIR, f"{unique_id}.png")
+    if user:
+        user_email = user.email
+        if user_email and user_email.endswith(f"@{ALLOWED_DOMAIN}"):
+            st.session_state.authenticated = True
+            st.session_state.user_email = user_email
+            return True
+        else:
+            st.session_state.authenticated = False
+            st.session_state.user_email = user_email # Store unauthorized email for display
+            return False
+    else:
+        st.session_state.authenticated = False
+        st.session_state.user_email = None
+        return False
 
-    try:
-        # 1. Write LaTeX code to a .tex file
-        with open(tex_filepath, "w", encoding="utf-8") as f:
-            f.write(latex_code)
+# --- Logout Function ---
+def logout():
+    """
+    Simulates a logout by clearing authentication state.
+    Note: On Streamlit Cloud, the user might still be logged into Google,
+    but this clears the app's internal recognition.
+    """
+    st.session_state.authenticated = False
+    st.session_state.user_email = None
+    st.experimental_rerun() # Rerun the app to reflect the logged out state
 
-        # 2. Compile LaTeX to PDF using pdflatex
-        # We need to run pdflatex from within the TEMP_DIR so it finds auxiliary files
-        # and doesn't clutter the /app directory.
-        compile_command = [
-            "pdflatex",
-            "-interaction=nonstopmode", # Don't stop for errors
-            "-output-directory", TEMP_DIR, # Output files into TEMP_DIR
-            tex_filepath
-        ]
-        # Run twice for cross-references, if any, but not strictly needed for images
-        process = subprocess.run(compile_command, capture_output=True, text=True, timeout=30) # 30s timeout
-        if process.returncode != 0:
-            # pdflatex failed, return error message
-            error_message = process.stderr + "\n" + process.stdout
-            # Attempt to clean up temp files
-            cleanup_files(unique_id)
-            return jsonify({"error": "LaTeX compilation failed", "details": error_message}), 400
+# --- Main App Logic ---
+st.title("Google Login with Domain Restriction")
 
-        # 3. Convert PDF to PNG image
-        if not os.path.exists(pdf_filepath):
-            cleanup_files(unique_id)
-            return jsonify({"error": "PDF not generated. LaTeX compilation failed silently or path issue."}), 500
+# Check authentication status on each rerun
+# This needs to be called after st.session_state initialization if states are used within it
+check_authentication()
 
-        # convert_from_bytes expects bytes, so read the PDF file
-        with open(pdf_filepath, "rb") as pdf_file:
-            pdf_bytes = pdf_file.read()
+if st.session_state.authenticated:
+    st.success(f"Hello World, you are logged in as {st.session_state.user_email}!")
+    st.markdown("This content is only visible to authorized users.")
 
-        # dpi can be adjusted for higher quality output
-        images = convert_from_bytes(pdf_bytes, first_page=1, last_page=1, dpi=200) # Only first page for preview
-        if not images:
-            cleanup_files(unique_id)
-            return jsonify({"error": "Failed to convert PDF to image."}), 500
-
-        img_byte_arr = io.BytesIO()
-        images[0].save(img_byte_arr, format='PNG')
-        img_byte_arr.seek(0) # Rewind to the beginning of the buffer
-
-        # Return the image as a base64 encoded string or as a file
-        # For simplicity, returning base64. Frontend can display directly.
-        base64_image = base64.b64encode(img_byte_arr.getvalue()).decode('utf-8')
-        return jsonify({"image": base64_image})
-
-    except subprocess.TimeoutExpired:
-        process.kill()
-        process.wait()
-        cleanup_files(unique_id)
-        return jsonify({"error": "LaTeX compilation timed out. Complexity too high or infinite loop."}), 408
-    except Exception as e:
-        cleanup_files(unique_id)
-        return jsonify({"error": f"An unexpected server error occurred: {str(e)}"}), 500
-    finally:
-        # Clean up temporary files regardless of success/failure
-        cleanup_files(unique_id)
-
-def cleanup_files(unique_id):
-    """Removes temporary files associated with a unique ID."""
-    files_to_remove = [
-        os.path.join(TEMP_DIR, f"{unique_id}.tex"),
-        os.path.join(TEMP_DIR, f"{unique_id}.pdf"),
-        os.path.join(TEMP_DIR, f"{unique_id}.log"),
-        os.path.join(TEMP_DIR, f"{unique_id}.aux"),
-        # Add other potential auxiliary files if needed
-    ]
-    for f in files_to_remove:
-        if os.path.exists(f):
-            try:
-                os.remove(f)
-            except OSError as e:
-                print(f"Error cleaning up file {f}: {e}")
-
-@app.route('/')
-def home():
-    return "LaTeX Compiler Backend is running!"
-
-if __name__ == '__main__':
-    # Flask runs on 0.0.0.0:5000 by default in Docker/Render.com environments
-    app.run(host='0.0.0.0', port=os.environ.get('PORT', 5000))
+    # Logout button
+    if st.button("Logout"):
+        logout()
+else:
+    st.error("Access Denied")
+    if st.session_state.user_email:
+        st.warning(f"Your email ({st.session_state.user_email}) is not authorized. Please log in with an email ending in @{ALLOWED_DOMAIN}.")
+    else:
+        st.info("Please log in using Google authentication provided by Streamlit to access this application.")
+    
+    # Provide a placeholder for the login mechanism if it's not automatically shown by Streamlit Cloud.
+    # Streamlit Cloud generally injects a "Continue with Google" button if `st.experimental_user` is accessed and no user is logged in.
+    st.markdown("---")
+    st.markdown("**(On Streamlit Community Cloud, a 'Continue with Google' button should appear automatically if you are not logged in. If not, try refreshing the page or checking your app's general Streamlit Cloud settings for login requirements.)**")
