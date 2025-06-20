@@ -16,10 +16,11 @@ def check_authentication():
     Checks if a user is logged in via Streamlit Cloud's Google Auth
     and if their email domain is authorized.
     """
-    user = st.user # Get user object from Streamlit Cloud environment
+    user = st.user # Use st.user as the replacement for st.experimental_user
 
     if user:
-        user_email = user.email
+        # Access email using .get() for robustness, as st.user is dict-like
+        user_email = user.get('email') 
         if user_email and user_email.endswith(f"@{ALLOWED_DOMAIN}"):
             st.session_state.authenticated = True
             st.session_state.user_email = user_email
